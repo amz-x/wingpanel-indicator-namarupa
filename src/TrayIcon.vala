@@ -1,388 +1,243 @@
-/*-
- * Copyright 2015 Wingpanel Developers (http://launchpad.net/wingpanel)
- *           2022-2023 lenemter <lenemter@gmail.com>
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Library General Public License as published by
- * the Free Software Foundation, either version 2.1 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Library General Public License for more details.
- *
- * You should have received a copy of the GNU Library General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+namespace Namarupa.Widgets {
+    // A single StatusNotifierItem, rendered as its icon with a popover menu
+    // built live from its (optional) com.canonical.dbusmenu layout.
+    // Gtk.MenuButton is a final GTK4 class and can't be subclassed directly,
+    // so wrap one instead (Granite.Bin is a plain single-child container).
+    public class TrayIcon : Granite.Bin {
+        public string bus_name { get; construct; }
+        public string object_path { get; construct; }
 
-public class AyatanaCompatibility.TrayIcon : IndicatorButton {
-    private Gtk.Stack main_stack;
-    private Gtk.Box main_box;
+        private ItemIface? proxy;
+        private MenuClient? menu_client;
+        private Gtk.Image icon;
+        private Gtk.Box menu_box;
+        private Gtk.Popover popover_widget;
+        private Gtk.MenuButton menu_button;
 
-    private unowned IndicatorAyatana.ObjectEntry entry;
-    public string name_hint { get { return entry.name_hint; } }
-
-    private Gee.HashMap<Gtk.Widget, Gtk.Widget> menu_map;
-
-    const int MAX_ICON_SIZE = 22;
-
-    //group radiobuttons
-    private Gtk.RadioButton? radio_group = null;
-
-    public TrayIcon (IndicatorAyatana.ObjectEntry entry) {
-        var name_hint = entry.name_hint;  // Without this line:
-                                          // ayatana_compatibility_tray_icon_get_name_hint: assertion 'self != NULL' failed
-
-        this.entry = entry;
-        menu_map = new Gee.HashMap<Gtk.Widget, Gtk.Widget> ();
-
-        if (entry.menu == null) {
-            critical ("TrayIcon: %s has no menu widget.", name_hint);
-            return;
+        public TrayIcon (string bus_name, string object_path) {
+            Object (bus_name: bus_name, object_path: object_path);
         }
 
-        setup_tray_icon ();
+        construct {
+            icon = new Gtk.Image.from_icon_name ("image-missing") {
+                pixel_size = 16
+            };
 
-        /*
-         * Workaround for buggy indicators: this menu may still be part of
-         * another panel entry which hasn't been destroyed yet. Those indicators
-         * trigger entry-removed after entry-added, which means that the previous
-         * parent is still in the panel when the new one is added.
-         */
-        if (entry.menu.get_attach_widget () != null) {
-            entry.menu.detach ();
-        }
-    }
+            menu_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0) {
+                margin_top = 3,
+                margin_bottom = 3
+            };
 
-    private void setup_tray_icon () {
-        var image = entry.image;
-        if (image != null) {
-            // images holding pixbufs are quite frequently way too large, so we whenever a pixbuf
-            // is assigned to an image we need to check whether this pixbuf is within reasonable size
-            if (image.storage_type == Gtk.ImageType.PIXBUF) {
-                image.notify["pixbuf"].connect (() => {
-                    ensure_max_size (image);
-                });
+            popover_widget = new Gtk.Popover () {
+                child = menu_box
+            };
 
-                ensure_max_size (image);
-            }
+            menu_button = new Gtk.MenuButton () {
+                child = icon,
+                popover = popover_widget,
+                always_show_arrow = false
+            };
+            menu_button.add_css_class ("flat");
 
-            image.pixel_size = MAX_ICON_SIZE;
+            child = menu_button;
 
-            set_widget (IndicatorButton.WidgetSlot.IMAGE, image);
-        }
+            popover_widget.notify["visible"].connect (() => {
+                if (popover_widget.visible) {
+                    rebuild_menu ();
+                }
+            });
 
-        var label = entry.label;
-        if (label != null) {
-            set_widget (IndicatorButton.WidgetSlot.LABEL, label);
+            connect_proxy.begin ();
         }
 
-        visible = true;
-
-        add_events (Gdk.EventMask.BUTTON_PRESS_MASK);  // Listen to clicks
-        button_press_event.connect (on_button_press);
-    }
-
-    public bool on_button_press (Gdk.EventButton event) {
-        generate_new_popover ().show_all ();
-
-        return Gdk.EVENT_PROPAGATE;
-    }
-
-    private Gtk.Popover generate_new_popover () {
-        // Generating new popover every time fixes some issues with submenus
-
-        menu_map.clear ();
-
-        main_stack = new Gtk.Stack ();
-        main_stack.map.connect (() => {
-            main_stack.set_visible_child (main_box);
-        });
-        main_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0) {
-            margin_top = 3,
-            margin_bottom = 3
-        };
-        main_stack.add (main_box);
-
-        foreach (var item in entry.menu.get_children ()) {
-            on_menu_widget_insert (item);
-        }
-
-        entry.menu.insert.connect (on_menu_widget_insert);
-        entry.menu.remove.connect (on_menu_widget_remove);
-
-        var popover = new Gtk.Popover (this);
-        popover.add (main_stack);
-
-        return popover;
-    }
-
-    private void on_menu_widget_insert (Gtk.Widget item) {
-        var widget = convert_menu_widget (item);  // Separator or Box
-        if (widget != null) {
-            menu_map[item] = widget;
-            main_box.add (widget);
-
-            /* menuitem not visible */
-            if (!item.visible) {
-                widget.no_show_all = true;
-                widget.hide ();
-            } else {
-                widget.show ();
-            }
-        }
-    }
-
-    private void on_menu_widget_remove (Gtk.Widget item) {
-        var widget = menu_map.get (item);
-        if (widget != null) {
-            main_box.remove (widget);
-            menu_map.unset (item);
-        }
-    }
-
-    private Gtk.Image? check_for_image (Gtk.Container container) {
-        foreach (var c in container.get_children ()) {
-            if (c is Gtk.Image) {
-                return (c as Gtk.Image);
-            } else if (c is Gtk.Container) {
-                return check_for_image (c as Gtk.Container);
-            }
-        }
-
-        return null;
-    }
-
-    private void connect_signals (Gtk.Widget item, Gtk.Widget button) {
-        item.show.connect (() => {
-            button.no_show_all = false;
-            button.show ();
-        });
-        item.hide.connect (() => {
-            button.no_show_all = true;
-            button.hide ();
-        });
-        item.state_flags_changed.connect ((type) => {
-            button.set_state_flags (item.get_state_flags (), true);
-        });
-    }
-
-    /* convert the menuitems to widgets that can be shown in popovers */
-    private Gtk.Widget? convert_menu_widget (Gtk.Widget item) {
-        /* separator are GTK.SeparatorMenuItem, return a separator */
-        if (item is Gtk.SeparatorMenuItem) {
-            var separator = new AyatanaCompatibility.Widgets.Separator ();
-            connect_signals (item, separator);
-
-            return separator;
-        }
-
-        /* all other items are genericmenuitems */
-        var label = ((Gtk.MenuItem)item).label;
-        label = label.replace ("_", "");  // Remove accels
-
-        /*
-         * get item type from atk accessibility
-         * 34 = MENU_ITEM  8 = CHECKBOX  32 = SUBMENU 44 = RADIO
-         */
-        const int ATK_CHECKBOX = 8;
-        const int ATK_RADIO = 44;
-
-        var atk = item.get_accessible ();
-        Value val = Value (typeof (int));
-        atk.get_property ("accessible_role", ref val);
-        var item_type = val.get_int ();
-
-        var state = item.get_state_flags ();
-
-        // Clear radio_group
-        if (item_type != ATK_RADIO) {
-            radio_group = null;
-        }
-
-        // detect if it has a image
-        Gtk.Image? image = null;
-        var child = ((Gtk.Bin)item).get_child ();
-        if (child != null) {
-            if (child is Gtk.Image) {
-                image = child as Gtk.Image;
-            } else if (child is Gtk.Container) {
-                image = check_for_image (child as Gtk.Container);
-            }
-        }
-        if (image != null && image.pixbuf == null && image.icon_name != null) {
+        private async void connect_proxy () {
             try {
-                image.pixbuf = Gtk.IconTheme.get_default ().load_icon (image.icon_name, 16, 0);
+                proxy = yield Bus.get_proxy (BusType.SESSION, bus_name, object_path, DBusProxyFlags.NONE);
             } catch (Error e) {
-                warning (e.message);
-            }
-        }
-        Gtk.Image? icon = null;
-        if (image != null && image.pixbuf != null) {
-            // I have no idea why it needs a new image
-            icon = new Gtk.Image.from_pixbuf (image.pixbuf);
-        }
-
-        // Item with checkbox
-        if (item_type == ATK_CHECKBOX) {
-            var box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6) {
-                margin_top = 6,
-                margin_bottom = 6,
-                margin_start = 12,
-                margin_end = 12,
-            };
-
-            var active = ((Gtk.CheckMenuItem)item).get_active ();
-            var button = new Gtk.CheckButton.with_label (label) {
-                active = active
-            };
-
-            box.pack_start (button, false, false, 0);
-            if (icon != null) {
-                box.pack_end (icon, false, false, 0);
+                warning ("Failed to connect to StatusNotifierItem %s%s: %s", bus_name, object_path, e.message);
+                return;
             }
 
-            button.toggled.connect ((b) => {
-                var is_active = b.active;
-                ((Gtk.CheckMenuItem)item).set_active (is_active);
-            });
+            update_icon ();
+            update_tooltip ();
 
-            connect_signals (item, button);
-            ((Gtk.CheckMenuItem)item).toggled.connect (() => {
-                button.active = ((Gtk.CheckMenuItem)item).get_active ();
-            });
+            proxy.new_icon.connect (update_icon);
+            proxy.new_title.connect (update_tooltip);
+            proxy.new_status.connect (() => update_tooltip ());
 
-            return box;
+            string? menu_path = proxy.menu;
+            if (menu_path != null && menu_path != "" && menu_path != "/") {
+                menu_client = new MenuClient (bus_name, menu_path);
+                menu_client.layout_changed.connect (() => {
+                    if (popover_widget.visible) {
+                        rebuild_menu ();
+                    }
+                });
+            }
         }
 
-        // Item with radio button
-        if (item_type == ATK_RADIO) {
-            var box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6) {
-                margin_top = 6,
-                margin_bottom = 6,
-                margin_start = 12,
-                margin_end = 12,
-            };
+        private void update_icon () {
+            string? name = proxy.icon_name;
+            if (name != null && name != "") {
+                string? theme_path = proxy.icon_theme_path;
+                if (theme_path != null && theme_path != "") {
+                    Gtk.IconTheme.get_for_display (Gdk.Display.get_default ()).add_search_path (theme_path);
+                }
 
-            var active = ((Gtk.CheckMenuItem)item).get_active ();
-            var button = new Gtk.RadioButton.with_label_from_widget (radio_group, label) {
-                active = active
-            };
-
-            box.pack_start (button, false, false, 0);
-            if (icon != null) {
-                box.pack_end (icon, false, false, 0);
+                icon.set_from_icon_name (name);
+                return;
             }
 
-            radio_group = button;
+            var pixmaps = proxy.icon_pixmap;
+            if (pixmaps != null && pixmaps.length > 0) {
+                var texture = pixmap_to_texture (pixmaps[pixmaps.length - 1]);
+                if (texture != null) {
+                    icon.set_from_paintable (texture);
+                    return;
+                }
+            }
 
-            // do not remove
-            button.clicked.connect (() => {
-                item.activate ();
-            });
-
-            button.activate.connect (() => {
-                item.activate ();
-                ((Gtk.RadioMenuItem)item).set_active (button.get_active ());
-            });
-
-            return box;
+            icon.set_from_icon_name ("image-missing");
         }
 
-        // Convert menuitem to a indicatorbutton
-        if (item is Gtk.MenuItem) {
-            var button_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
-            var lbl = new Gtk.Label (label);
-            button_box.pack_start (lbl, false, false, 0);
-            if (icon != null) {
-                button_box.pack_end (icon, false, false, 0);
+        private Gdk.Texture? pixmap_to_texture (IconPixmap pixmap) {
+            if (pixmap.width <= 0 || pixmap.height <= 0 || pixmap.data.length < pixmap.width * pixmap.height * 4) {
+                return null;
             }
 
-            var button = new Gtk.ModelButton ();
-            button.get_child ().destroy ();
-            button.child = button_box;
+            // Source pixels are big-endian ARGB32 (A R G B bytes); convert to R G B A.
+            var bytes = new uint8[pixmap.data.length];
+            for (int i = 0; i < pixmap.data.length; i += 4) {
+                bytes[i] = pixmap.data[i + 1];
+                bytes[i + 1] = pixmap.data[i + 2];
+                bytes[i + 2] = pixmap.data[i + 3];
+                bytes[i + 3] = pixmap.data[i];
+            }
 
-            item.notify["label"].connect (() => {
-                lbl.label = ((Gtk.MenuItem)item).get_label ().replace ("_", "");  // Remove accels
-            });
+            return new Gdk.MemoryTexture (
+                pixmap.width, pixmap.height, Gdk.MemoryFormat.R8G8B8A8,
+                new Bytes.take (bytes), pixmap.width * 4
+            );
+        }
 
-            button.set_state_flags (state, true);
+        private void update_tooltip () {
+            string? title = proxy.title;
+            tooltip_text = (title != null && title != "") ? title : proxy.id;
+        }
 
-            var submenu = ((Gtk.MenuItem)item).submenu;
-            if (submenu != null) {
-                var scroll_window = new Gtk.ScrolledWindow (null, null);
-                scroll_window.set_policy (Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC);
-                main_stack.add (scroll_window);
+        private void rebuild_menu () {
+            clear_box (menu_box);
 
-                var sub_list = new Gtk.Box (Gtk.Orientation.VERTICAL, 0) {
+            if (menu_client == null) {
+                var activate_item = new Wingpanel.PopoverMenuItem.with_text (
+                    (proxy.title != null && proxy.title != "") ? proxy.title : proxy.id
+                );
+                activate_item.clicked.connect (() => {
+                    popover_widget.popdown ();
+                    try {
+                        proxy.activate (0, 0);
+                    } catch (Error e) {
+                        warning ("Activate failed for %s: %s", bus_name, e.message);
+                    }
+                });
+                menu_box.append (activate_item);
+                return;
+            }
+
+            if (menu_client.root == null) {
+                menu_client.refresh.begin ();
+                return;
+            }
+
+            populate_menu_box (menu_box, menu_client.root.children);
+        }
+
+        private void populate_menu_box (Gtk.Box box, Gee.ArrayList<MenuItemNode> nodes) {
+            foreach (var node in nodes) {
+                var widget = build_menu_widget (node);
+                if (widget != null) {
+                    box.append (widget);
+                }
+            }
+        }
+
+        private Gtk.Widget? build_menu_widget (MenuItemNode node) {
+            if (!node.get_bool ("visible", true)) {
+                return null;
+            }
+
+            if (node.get_string ("type", "standard") == "separator") {
+                return new Gtk.Separator (Gtk.Orientation.HORIZONTAL) {
                     margin_top = 3,
                     margin_bottom = 3
                 };
-                scroll_window.add (sub_list);
-
-                var back_button = new Gtk.ModelButton () {
-                    text = _("Back"),
-                    inverted = true,
-                    menu_name = "main_box"
-                };
-                sub_list.add (back_button);
-                sub_list.add (new AyatanaCompatibility.Widgets.Separator ());
-
-                //adding submenu items
-                foreach (var sub_item in submenu.get_children ()) {
-                    var sub_menu_item = convert_menu_widget (sub_item);
-                    connect_signals (sub_item, sub_menu_item);
-                    sub_list.add (sub_menu_item);
-                }
-
-                submenu.insert.connect ((sub_item) => {
-                    var sub_menu_item = convert_menu_widget (sub_item);
-                    if (sub_menu_item != null) {
-                        connect_signals (sub_item, sub_menu_item);
-                        sub_list.add (sub_menu_item);
-                    }
-                });
-
-                submenu.remove.connect ((sub_item) => {
-                    var sub_menu_item = menu_map.get (sub_item);
-                    if (sub_menu_item != null) {
-                        sub_list.remove (sub_menu_item);
-                    }
-                });
-
-                //Button opening the submenu
-                button.menu_name = "submenu";
-
-                // Switch to default
-                back_button.clicked.connect (() => {
-                    scroll_window.set_policy (Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC);
-                    main_stack.set_visible_child (main_box);
-                });
-                // Switch to submenu
-                button.clicked.connect (() => {
-                    scroll_window.set_policy (Gtk.PolicyType.NEVER, Gtk.PolicyType.NEVER);
-                    main_stack.set_visible_child (scroll_window);
-                });
-            } else {
-                button.clicked.connect (() => {
-                    item.activate ();
-                });
             }
 
-            connect_signals (item, button);
-            return button;
+            var label = node.get_string ("label", "").replace ("_", "");
+            var enabled = node.get_bool ("enabled", true);
+            var toggle_type = node.get_string ("toggle-type", "");
+
+            if (node.get_string ("children-display", "") == "submenu" && node.children.size > 0) {
+                var submenu_item = new Wingpanel.PopoverMenuItem.with_text (label) {
+                    sensitive = enabled
+                };
+                submenu_item.clicked.connect (() => {
+                    menu_client.about_to_show (node.id);
+                    show_submenu (submenu_item, node);
+                });
+
+                return submenu_item;
+            }
+
+            if (toggle_type == "checkmark" || toggle_type == "radio") {
+                var check = new Gtk.CheckButton.with_label (label) {
+                    active = node.get_int ("toggle-state", 0) == 1,
+                    sensitive = enabled,
+                    margin_start = 12,
+                    margin_end = 12,
+                    margin_top = 3,
+                    margin_bottom = 3
+                };
+                check.toggled.connect (() => menu_client.activate (node.id));
+
+                return check;
+            }
+
+            var item = new Wingpanel.PopoverMenuItem.with_text (label) {
+                sensitive = enabled
+            };
+            item.clicked.connect (() => {
+                popover_widget.popdown ();
+                menu_client.activate (node.id);
+            });
+
+            return item;
         }
 
-        return null;
-    }
+        private void show_submenu (Gtk.Widget relative_to, MenuItemNode node) {
+            var sub_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0) {
+                margin_top = 3,
+                margin_bottom = 3
+            };
+            populate_menu_box (sub_box, node.children);
 
-    private void ensure_max_size (Gtk.Image image) {
-        var pixbuf = image.pixbuf;
+            var sub_popover = new Gtk.Popover () {
+                child = sub_box,
+                has_arrow = false,
+                position = Gtk.PositionType.RIGHT
+            };
+            sub_popover.set_parent (relative_to);
+            sub_popover.popup ();
+        }
 
-        if (pixbuf != null && pixbuf.get_height () > MAX_ICON_SIZE) {
-            var dest_width = (int)((double)MAX_ICON_SIZE / pixbuf.get_height () * pixbuf.get_width ());
-            image.pixbuf = pixbuf.scale_simple (dest_width, MAX_ICON_SIZE, Gdk.InterpType.HYPER);
+        private void clear_box (Gtk.Box box) {
+            var child = box.get_first_child ();
+            while (child != null) {
+                var next = child.get_next_sibling ();
+                box.remove (child);
+                child = next;
+            }
         }
     }
 }
+

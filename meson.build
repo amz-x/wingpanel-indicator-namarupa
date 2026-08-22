@@ -1,50 +1,38 @@
 project(
-    'namarupa',
-    'vala', 'c',
-    version: '1.0.3',
-    meson_version: '>=0.58'
+  'namarupa',
+  'vala', 'c',
+  version: '2.0.0',
+  meson_version: '>=0.58'
 )
 
-gettext_name = meson.project_name() + '-indicator'
-i18n = import('i18n')
-
-add_global_arguments(
-    '-DGETTEXT_PACKAGE="@0@"'.format(gettext_name),
-    language:'c'
-)
 add_project_arguments(
-    '--vapidir', meson.current_source_dir() / 'vapi',
-    language: 'vala'
-)
-add_project_arguments(
-    '-DG_LOG_DOMAIN="com.github.lenemter.wingpanel-indicator-namarupa"',
-    language:'c'
+  '-DG_LOG_DOMAIN="com.github.amz-x.wingpanel-indicator-namarupa"',
+  language: 'c'
 )
 
-# Other configs
-config_data = configuration_data()
-config_data.set_quoted('GETTEXT_PACKAGE', gettext_name)
-config_data.set_quoted('LOCALEDIR', get_option('prefix') / get_option('localedir'))
-config_data.set_quoted('AYATANAINDICATORDIR', dependency('indicator3-0.4').get_variable('indicatordir'))
+prefix = get_option('prefix')
+libdir = prefix / get_option('libdir')
+
+wingpanel_dep = dependency('wingpanel-9')
 
 shared_module(
-    meson.project_name(),
-    configure_file(input: 'src/Config.vala.in', output: '@BASENAME@', configuration: config_data),
-    'src/Indicator.vala',
-    'src/IndicatorButton.vala',
-    'src/IndicatorFactory.vala',
-    'src/Separator.vala',
-    'src/TrayIcon.vala',
-    dependencies: [
-        dependency('glib-2.0'),
-        dependency('gobject-2.0'),
-        dependency('granite'),
-        dependency('gtk+-3.0'),
-        dependency('wingpanel'),
-        dependency('indicator3-0.4')
-    ],
-    install: true,
-    install_dir : dependency('wingpanel').get_variable('indicatorsdir')
+  meson.project_name(),
+  'src/Protocol.vala',
+  'src/MenuClient.vala',
+  'src/Watcher.vala',
+  'src/TrayIcon.vala',
+  'src/Indicator.vala',
+  dependencies: [
+    dependency('glib-2.0'),
+    dependency('gobject-2.0'),
+    dependency('gio-2.0'),
+    dependency('gio-unix-2.0'),
+    dependency('gee-0.8'),
+    dependency('granite-7'),
+    dependency('gtk4'),
+    wingpanel_dep,
+  ],
+  install: true,
+  install_dir: wingpanel_dep.get_variable('indicatorsdir', pkgconfig_define: ['libdir', libdir]),
 )
 
-subdir('po')

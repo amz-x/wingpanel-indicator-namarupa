@@ -1,8 +1,6 @@
 build/
 debian/.debhelper/
 debian/debhelper-build-stamp
-debian/com.github.lenemter.wingpanel-indicator-namarupa.*
-debian/com.github.lenemter.wingpanel-indicator-namarupa/
 debian/files
 obj-*/
 
