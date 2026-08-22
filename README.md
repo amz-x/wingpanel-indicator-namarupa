@@ -2,17 +2,32 @@
 
 ![Screenshot](data/screenshot.png)
 
-## For developers
+## NixOS users
 
-You'll need the following dependencies:
+1. Ensure you are using the following nixpkgs in your flake configuration [amz-x/nixpkgs/nixos-unstable-pantheon](https://github.com/amz-x/nixpkgs/tree/nixos-unstable-pantheon).
 
-- libglib2.0-dev
-- libgee-0.8-dev
-- libgranite-7-dev
-- libgtk-4-dev
-- libwingpanel-dev
-- valac
-- meson (>= 0.58)
+2. Enable appindicator service
+```nix
+systemd.user.services.indicator-application-service = {
+  enable        = true;
+  description   = "Indicator Application Service";
+  after         = [ "graphical-session.target" ];
+  wantedBy      = [ "graphical-session.target" ];
+  partOf        = [ "graphical-session.target" ];
+  serviceConfig = {
+    ExecStart   = "${pkgs.indicator-application-gtk3}/libexec/indicator-application/indicator-application-service";
+  };
+};
+```
+
+3. Add the wingpanel-indicator-namarupa
+```nix
+services.desktopManager.pantheon.extraWingpanelIndicators = with pkgs; [
+  wingpanel-indicator-namarupa
+];
+```
+
+## elementary OS users
 
 On elementary OS these are all available from the default repositories. On
 Debian-based distros without them preinstalled (such as plain Ubuntu), enable
@@ -23,6 +38,18 @@ sudo add-apt-repository ppa:elementaryos/stable
 sudo add-apt-repository ppa:elementaryos/os-patches
 sudo apt update
 ```
+
+### Developers
+
+You'll need the following dependencies:
+
+- libglib2.0-dev
+- libgee-0.8-dev
+- libgranite-7-dev
+- libgtk-4-dev
+- libwingpanel-dev
+- valac
+- meson (>= 0.58)
 
 Then install the build dependencies with:
 
