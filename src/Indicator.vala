@@ -10,7 +10,6 @@ public class Namarupa.MainIndicator : Wingpanel.Indicator {
 
     construct {
         icons = new Gee.HashMap<string, Widgets.TrayIcon> ();
-
         icons_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6) {
             margin_start = 6,
             margin_end = 6,
@@ -27,6 +26,7 @@ public class Namarupa.MainIndicator : Wingpanel.Indicator {
             margin_start = 12,
             margin_end = 12
         };
+
         no_icons_label.add_css_class (Granite.STYLE_CLASS_H3_LABEL);
 
         main_stack = new Gtk.Stack ();
@@ -93,8 +93,8 @@ public class Namarupa.MainIndicator : Wingpanel.Indicator {
     }
 }
 
-public Wingpanel.Indicator? get_indicator (GLib.Module module, Wingpanel.IndicatorManager.ServerType server_type) {
-    if (server_type != Wingpanel.IndicatorManager.ServerType.SESSION) {
+public Wingpanel.Indicator? get_indicator (GLib.Module module, Wingpanel.ServerType server_type) {
+    if (server_type == Wingpanel.ServerType.GREETER) {
         return null;
     }
 
