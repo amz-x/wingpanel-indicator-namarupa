@@ -41,6 +41,26 @@ namespace Namarupa.Widgets {
 
             child = menu_button;
 
+            // Wingpanel's indicator entry claims every press it sees, which
+            // cancels the menu button's own click (it only fires on release).
+            // Claim presses first, in the capture phase, and handle them here.
+            var click_controller = new Gtk.GestureClick () {
+                button = 0,
+                propagation_phase = Gtk.PropagationPhase.CAPTURE
+            };
+            click_controller.pressed.connect (() => {
+                click_controller.set_state (Gtk.EventSequenceState.CLAIMED);
+
+                if (click_controller.get_current_button () == Gdk.BUTTON_MIDDLE) {
+                    secondary_activate ();
+                } else if (popover_widget.visible) {
+                    popover_widget.popdown ();
+                } else {
+                    menu_button.popup ();
+                }
+            });
+            add_controller (click_controller);
+
             popover_widget.notify["visible"].connect (() => {
                 if (popover_widget.visible) {
                     rebuild_menu ();
@@ -73,6 +93,18 @@ namespace Namarupa.Widgets {
                         rebuild_menu ();
                     }
                 });
+            }
+        }
+
+        private void secondary_activate () {
+            if (proxy == null) {
+                return;
+            }
+
+            try {
+                proxy.secondary_activate (0, 0);
+            } catch (Error e) {
+                warning ("SecondaryActivate failed for %s: %s", bus_name, e.message);
             }
         }
 
@@ -127,6 +159,10 @@ namespace Namarupa.Widgets {
 
         private void rebuild_menu () {
             clear_box (menu_box);
+
+            if (proxy == null) {
+                return;
+            }
 
             if (menu_client == null) {
                 var activate_item = new Wingpanel.PopoverMenuItem.with_text (
