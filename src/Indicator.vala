@@ -1,7 +1,8 @@
+// Shows every StatusNotifierItem side by side directly in the panel. Each
+// TrayIcon owns its own popover menu, so the indicator itself has none.
 public class Namarupa.MainIndicator : Wingpanel.Indicator {
     private TrayManager manager;
     private Gtk.Box icons_box;
-    private Gtk.Stack main_stack;
     private Gee.HashMap<string, Widgets.TrayIcon> icons;
 
     public MainIndicator () {
@@ -10,31 +11,20 @@ public class Namarupa.MainIndicator : Wingpanel.Indicator {
 
     construct {
         icons = new Gee.HashMap<string, Widgets.TrayIcon> ();
-        icons_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6) {
-            margin_start = 6,
-            margin_end = 6,
-            margin_top = 3,
-            margin_bottom = 3
+        icons_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0) {
+            valign = Gtk.Align.CENTER
         };
 
-        var no_icons_label = new Gtk.Label ("No Tray Icons") {
-            sensitive = false,
-            valign = Gtk.Align.CENTER,
-            halign = Gtk.Align.CENTER,
-            margin_top = 6,
-            margin_bottom = 6,
-            margin_start = 12,
-            margin_end = 12
-        };
+        // Wingpanel opens the indicator popover on any press its entry
+        // receives. Presses on an icon are claimed by its menu button; claim
+        // the rest (gaps, padding) here so no empty popover is shown.
+        var click_controller = new Gtk.GestureClick ();
+        click_controller.pressed.connect (() => {
+            click_controller.set_state (Gtk.EventSequenceState.CLAIMED);
+        });
+        icons_box.add_controller (click_controller);
 
-        no_icons_label.add_css_class (Granite.STYLE_CLASS_H3_LABEL);
-
-        main_stack = new Gtk.Stack ();
-        main_stack.add_named (no_icons_label, "empty");
-        main_stack.add_named (icons_box, "icons");
-        main_stack.visible_child_name = "empty";
-
-        visible = true;
+        visible = false;
 
         manager = new TrayManager ();
         manager.item_added.connect (on_item_added);
@@ -58,7 +48,7 @@ public class Namarupa.MainIndicator : Wingpanel.Indicator {
         icons[key] = tray_icon;
         icons_box.append (tray_icon);
 
-        main_stack.visible_child_name = "icons";
+        visible = true;
     }
 
     private void on_item_removed (string bus_name, string object_path) {
@@ -72,18 +62,16 @@ public class Namarupa.MainIndicator : Wingpanel.Indicator {
         icons_box.remove (tray_icon);
 
         if (icons.is_empty) {
-            main_stack.visible_child_name = "empty";
+            visible = false;
         }
     }
 
     public override Gtk.Widget get_display_widget () {
-        return new Gtk.Image.from_icon_name ("view-more-horizontal-symbolic") {
-            pixel_size = 16
-        };
+        return icons_box;
     }
 
     public override Gtk.Widget? get_widget () {
-        return main_stack;
+        return null;
     }
 
     public override void opened () {
