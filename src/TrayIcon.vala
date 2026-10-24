@@ -52,7 +52,10 @@ namespace Namarupa.Widgets {
 
         private async void connect_proxy () {
             try {
-                proxy = yield Bus.get_proxy (BusType.SESSION, bus_name, object_path, DBusProxyFlags.NONE);
+                // Items announce changes with NewIcon/NewTitle/NewStatus rather than
+                // PropertiesChanged, so a property cache would keep serving the first
+                // values. Without it every property read is fetched from the item.
+                proxy = yield Bus.get_proxy (BusType.SESSION, bus_name, object_path, DBusProxyFlags.DO_NOT_LOAD_PROPERTIES);
             } catch (Error e) {
                 warning ("Failed to connect to StatusNotifierItem %s%s: %s", bus_name, object_path, e.message);
                 return;
@@ -78,7 +81,13 @@ namespace Namarupa.Widgets {
 
         private void update_icon () {
             string? name = proxy.icon_name;
-            if (name != null && name != "") {
+            // Some items (e.g. Proton VPN) pass an absolute icon file path as IconName.
+            if (name != null && Path.is_absolute (name)) {
+                if (FileUtils.test (name, FileTest.EXISTS)) {
+                    icon.set_from_file (name);
+                    return;
+                }
+            } else if (name != null && name != "") {
                 string? theme_path = proxy.icon_theme_path;
                 if (theme_path != null && theme_path != "") {
                     Gtk.IconTheme.get_for_display (Gdk.Display.get_default ()).add_search_path (theme_path);
