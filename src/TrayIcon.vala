@@ -19,7 +19,11 @@ namespace Namarupa.Widgets {
 
         construct {
             icon = new Gtk.Image.from_icon_name ("image-missing") {
-                pixel_size = 16
+                pixel_size = 16,
+                margin_top = 4,
+                margin_bottom = 4,
+                margin_start = 6,
+                margin_end = 6
             };
 
             menu_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0) {
