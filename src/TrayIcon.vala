@@ -1,8 +1,8 @@
 namespace Namarupa.Widgets {
     // A single StatusNotifierItem, rendered as its icon with a popover menu
     // built live from its (optional) com.canonical.dbusmenu layout.
-    // Gtk.MenuButton is a final GTK4 class and can't be subclassed directly,
-    // so wrap one instead (Granite.Bin is a plain single-child container).
+    // Rendered as a bare image with a click gesture rather than a button, so
+    // no button styling (frame, hover background) is drawn around the icon.
     public class TrayIcon : Granite.Bin {
         public string bus_name { get; construct; }
         public string object_path { get; construct; }
@@ -12,7 +12,6 @@ namespace Namarupa.Widgets {
         private Gtk.Image icon;
         private Gtk.Box menu_box;
         private Gtk.Popover popover_widget;
-        private Gtk.MenuButton menu_button;
 
         public TrayIcon (string bus_name, string object_path) {
             Object (bus_name: bus_name, object_path: object_path);
@@ -32,14 +31,13 @@ namespace Namarupa.Widgets {
                 child = menu_box
             };
 
-            menu_button = new Gtk.MenuButton () {
-                child = icon,
-                popover = popover_widget,
-                always_show_arrow = false
-            };
-            menu_button.add_css_class ("flat");
+            popover_widget.set_parent (this);
 
-            child = menu_button;
+            child = icon;
+
+            var click = new Gtk.GestureClick ();
+            click.released.connect (() => popover_widget.popup ());
+            add_controller (click);
 
             popover_widget.notify["visible"].connect (() => {
                 if (popover_widget.visible) {
@@ -48,6 +46,15 @@ namespace Namarupa.Widgets {
             });
 
             connect_proxy.begin ();
+        }
+
+        public override void dispose () {
+            if (popover_widget != null) {
+                popover_widget.unparent ();
+                popover_widget = null;
+            }
+
+            base.dispose ();
         }
 
         private async void connect_proxy () {
