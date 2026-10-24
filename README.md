@@ -39,6 +39,22 @@ sudo add-apt-repository ppa:elementaryos/os-patches
 sudo apt update
 ```
 
+### Indicator Application
+
+1. Install indicator-application package:
+
+```bash
+sudo apt install indicator-application -y
+```
+
+2. Setup autostart file:
+
+```bash
+mkdir -p ~/.config/autostart
+cp /etc/xdg/autostart/indicator-application.desktop ~/.config/autostart/
+sed -i 's/^OnlyShowIn.*/OnlyShowIn=Unity;GNOME;Pantheon;/' ~/.config/autostart/indicator-application.desktop
+```
+
 ### Developers
 
 You'll need the following dependencies:
