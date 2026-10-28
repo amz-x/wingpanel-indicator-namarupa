@@ -69,6 +69,7 @@ public class Namarupa.MainIndicator : Wingpanel.Indicator {
         }
 
         icons.unset (key);
+        tray_icon.close ();
         icons_box.remove (tray_icon);
 
         if (icons.is_empty) {
@@ -90,6 +91,11 @@ public class Namarupa.MainIndicator : Wingpanel.Indicator {
     }
 
     public override void closed () {
+        // A tray icon's menu is a popover of its own, which would otherwise
+        // stay open after switching to another indicator or clicking away.
+        foreach (var tray_icon in icons.values) {
+            tray_icon.close ();
+        }
     }
 }
 

@@ -3,6 +3,7 @@ namespace Namarupa {
     // protocol. Kept as a loose property bag since the set of properties
     // that matter differs per item type (separator/standard/checkmark/…).
     public class MenuItemNode : Object {
+
         public int32 id;
         public HashTable<string, Variant> properties = new HashTable<string, Variant> (str_hash, str_equal);
         public Gee.ArrayList<MenuItemNode> children = new Gee.ArrayList<MenuItemNode> ();
@@ -86,13 +87,14 @@ namespace Namarupa {
             }
         }
 
-        // A conforming dbusmenu server types every node as "(ia{sv}av)",
-        // boxing each child in a variant so the struct can recurse. Some
-        // servers (e.g. ProtonVPN's) instead type childless nodes' children
-        // field as the concrete "a(ia{sv}av)", which trips up a fixed
-        // "(ia{sv}av)" format string: Variant.get() doesn't throw on a type
-        // mismatch, it fires a g_critical and leaves ids/properties blank.
-        // Walk the struct by child index instead so either shape works.
+        // Each node is (id, properties, children). The spec types it as
+        // "(ia{sv}av)", with every child boxed in a variant so the structure
+        // can nest. Some servers skip the boxing for childless nodes and send
+        // their empty children list as "a(ia{sv}av)" instead. Unpacking with
+        // a fixed "(ia{sv}av)" format string then fails quietly: Variant.get()
+        // doesn't throw on a type mismatch, it logs a g_critical and leaves
+        // the id and properties blank. Reading each field by index works
+        // with either shape.
         private MenuItemNode parse_node (Variant v) {
             var node = new MenuItemNode (v.get_child_value (0).get_int32 ());
 
@@ -122,6 +124,16 @@ namespace Namarupa {
 
         public void activate (int32 id) {
             send_event.begin (id, "clicked");
+        }
+
+        // Tell the server its root menu was shown or hidden.
+        // Some refresh their entries on "opened".
+        public void opened () {
+            send_event.begin (root != null ? root.id : 0, "opened");
+        }
+
+        public void closed () {
+            send_event.begin (root != null ? root.id : 0, "closed");
         }
 
         private async void send_about_to_show (int32 id) {
